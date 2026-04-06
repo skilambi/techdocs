@@ -1,0 +1,199 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{fancyvrb}
+
+%\usepackage[outputdir=.texpadtmp]{minted}
+\usepackage[backend=bibtex]{biblatex}
+
+
+
+
+\bibliography{bibliography}
+
+\title{Hardware Design Topics}
+\author{Sai Mohan Kilambi}
+\date{\today}
+\begin{document}
+
+\maketitle
+
+\setcounter{tocdepth}{4}
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+This document contains notes on various hardware design topics that I find useful to take note of. We will cover hardware design elements, design patterns, static timing analysis, FPGA topics that are useful and other such things. 
+
+\section{Common Hardware Blocks}
+\subsection{Inferred Latch}
+
+There are two kinds of memory elements in hardware design. One is a Flip-Flop and another is a Latch. A flip-flop changes its output state only on a rising or a falling edge of a clock. A latch on the other hand will change its state whenever its input changes state. However when input does not change state it will have to remember its previous output. 
+
+In a case or if-else statement that is not complete, a latch may get inferred as shown in \ref{fig:inferred_latch}. This created a combination loop that cannot be timed. This is why inferred latches are harmful for ASIC/FPGA design. In the following code snippet, the comb\_out variable is not set when sel is $2'b11$. This will create a feedback. Always best to have complete case statement list or use \textit{unique case} statement.
+
+\begin{Verbatim}
+	
+	logic [1:0] sel, comb_out;
+
+	always_comb begin
+		case(sel)
+			2'b00: comb_out = 0;
+			2'b01: comb_out = 1;
+			2'b10: comb_out = 2; 
+		endcase
+	end
+\end{Verbatim}
+
+
+	\begin{figure}[b]
+		\centering
+  		\includegraphics[width=0.35\linewidth]{inferred_latch.png}
+  		\caption{Inferred Latch.}
+  		\label{fig:inferred_latch}
+	\end{figure} 
+
+
+
+
+\subsection{Synchronous FIFO}
+
+
+In a Sync FIFO the write and the read operate on the same clock. Let's break this down into its fundamental pieces. 
+\begin{enumerate}
+	\item Memory unit: This can be a bunch of registers of a certain width or BRAMs in an FPGA.
+	\item Write Logic: This logic deals with keeping track of the write pointer. The write pointer indicates where the next data element should be written. 
+	\item Read Logic: This portion deals with read pointer. The read pointer tracks the next location to be read.  
+	\item Control and Status Logic: This portion keeps track of status signals such as EMPTY, FULL, ALMOST\_EMPTY, ALMOST\_FULL etc. COUNT signal will keep track of how many elements are currently present in the FIFO. 
+\end{enumerate}
+
+We will dig into each of these logic portions individually. 
+
+\subsubsection{Count Logic}
+Count keeps track of how many elements are currently in the FIFO. It has the following properties
+
+\begin{enumerate}
+	\item Should increment when there is a write but no read and its not full.
+	\item Should decrement when there is a read but no write and its not empty.
+	\item Should stay the same if there is no read OR write or there is a read AND write.
+\end{enumerate}
+
+\begin{Verbatim}
+	always_ff @ (posedge clk) begin
+		if ( ~resetn ) begin
+			count <= '0;
+		end else begin 
+			count <= count_nxt;
+		end 
+	end	
+	
+	always_comb begin
+		count_nxt = count;
+		
+		case ( {we, re} ) begin
+			2'b10: count_nxt = count + 1;
+			2'b01: count_nxt = count - 1;
+		endcase
+	end 
+\end{Verbatim}
+
+
+\subsubsection{Write Logic}
+
+We first want to answer the following questions:
+\begin{enumerate}
+	\item When should a write occur? It should occur when the FIFO is not FULL. The FULL status signal should be used as a protection circuit for the writes. We can deal with this with valid, ready handshake on the write side. Valid is an input and ready should be high only if there is space in the FIFO. 
+	\item Pointer logic: Write pointer should increment whenever there is a valid write transaction. Remember that it indicates where the next write should happen.
+\end{enumerate}
+
+\begin{Verbatim}
+	// Write enable
+	assign we = in_valid & in_ready;
+	
+	// Full Logic
+	assign full = ~(count < SIZE); 	
+	
+	// In Ready Logic
+	assign in_ready = !full;
+	
+	// Write pointer
+	always_ff@ ( posedge clk ) begin 
+		if (!resetn) begin
+			wptr <= '0;
+		end else begin
+			if ( we )
+				wptr <= f_incr_ptr ( wptr, SIZE );
+		end
+	end
+	
+	function addr_t f_incr_ptr(addr_t ptr, int SIZE);
+		addr_t int_ptr;
+		
+		int_ptr = ptr < SIZE - 1 ? ptr+1 : 0;
+	
+		return int_ptr;
+	endfunction;
+	
+	
+	
+\end{Verbatim}
+
+
+\subsubsection{Read Logic}
+
+We want to read when the down stream logic is ready to pop and when FIFO is not empty.
+
+\begin{Verbatim}
+
+	// Read Enable
+	assign re = out_valid & out_ready;
+	
+	// Empty
+	assign empty = count == 0;
+	
+	// Out Valid
+	assign out_valid = !empty;
+	
+	// Read pointer
+	always_ff@ ( posedge clk ) begin 
+		if (!resetn) begin
+			rptr <= '0;
+		end else begin
+			if ( re )
+				rptr <= f_incr_ptr ( rptr, SIZE );
+		end
+	end
+	
+\end{Verbatim}
+
+\subsubsection{Control and Status Logic}
+
+We covered FULL, EMPTY and COUNT already. We only need ALMOST\_FULL and ALMOST\_EMPTY.
+
+If we have given parameters for the count value for almost full and empty then we can just use this. By default, AMOST\_FULL\_SIZE is the same as SIZE and ALMOST\_EMPTY\_SIZE is same as 0.
+
+\begin{Verbatim}
+	assign alm_full = count >= ALMOST_FULL_SIZE;
+	assign alm_empty = count <= ALMOST_EMPTY_SIZE;
+\end{Verbatim}
+
+
+\subsection{Ring Buffer or Queue}
+
+Ring buffer is basically a queue. It is circular in that the read/write pointers wrap around. In strict definition, one should be able to overwrite old data in a ring-buffer but in our case we will handle empty/full conditions. Following is the contract for a ring buffer.
+\begin{enumerate}
+	\item An empty queue cannot be read from. That is, the output valid should be low if queue is empty.
+	\item If a queue is full, then there should be back-pressure and new data cannot be written in.
+\end{enumerate}
+
+
+
+
+\printbibliography
+	
+\end{document}
