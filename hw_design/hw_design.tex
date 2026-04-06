@@ -1,16 +1,6 @@
-\documentclass[11pt]{article}
-\usepackage[margin=1in]{geometry}
-\usepackage{amsmath}
-\usepackage{graphicx}
-\usepackage{amssymb}
-\usepackage[dvipsnames]{xcolor}
-\usepackage{fancyvrb}
+\documentclass{article}
 
-%\usepackage[outputdir=.texpadtmp]{minted}
-\usepackage[backend=bibtex]{biblatex}
-
-
-
+\usepackage{../latex/styles/core} 
 
 \bibliography{bibliography}
 
@@ -49,16 +39,6 @@ In a case or if-else statement that is not complete, a latch may get inferred as
 		endcase
 	end
 \end{Verbatim}
-
-
-	\begin{figure}[b]
-		\centering
-  		\includegraphics[width=0.35\linewidth]{inferred_latch.png}
-  		\caption{Inferred Latch.}
-  		\label{fig:inferred_latch}
-	\end{figure} 
-
-
 
 
 \subsection{Synchronous FIFO}
