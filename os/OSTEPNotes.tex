@@ -1,0 +1,159 @@
+\documentclass[11pt]{article}
+\usepackage{../latex/styles/core} 
+
+\bibliography{bibliography}
+
+\title{OSTEP Notes}
+\author{Sai Mohan Kilambi}
+\date{\today}
+\begin{document}
+
+\maketitle
+
+\setcounter{tocdepth}{4}
+\tableofcontents
+
+\newpage
+\section{Mechanism - Limited Direct Execution}
+
+How can we virtualize the CPU efficiently?
+
+\section{Book Chapter 14: Interlude - Memory API}
+\subsection{Notes}
+
+Main idea is there are two types of memory:
+\begin{enumerate}
+	\item Stack: Managed by compiler for you. Also called automatic memory. The compiler automatically allocates and deallocates. So if you want some data to persist then dont put it on stack.
+	\item Heap: You the designer manages it. Use \textbf{malloc} to assign.
+\end{enumerate}
+
+
+\begin{lstlisting}[style=cppstyle]
+	
+// Chapter 14: Interlude - Memory API
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+  int *a;
+
+  // This line has both allocation on stack and heap
+  // The pointer 'a' is allocated on the stack
+  // The memory for 10 integers is allocated on the heap
+  a = (int *)malloc(10 * sizeof(int));
+
+  // Print the address of the allocated memory
+  // This will print the address of where the 10 integers are stored on the heap
+  // Its also the first element of the array when you dereference it
+  printf("%p\n", a);
+
+  // Free the allocated memory
+  free(a);
+  return 0;
+}
+\end{lstlisting}
+\subsection{Chapter End Exercises}
+\subsubsection{Null.c}
+
+We basically created a null.c program and tried to dereference a pointer that has address as $NULL$. We saw a segfault. Makes sense we are trying to access a memory location we are not allowed. 
+
+\begin{lstlisting}[style=cppstyle]
+#include <iostream>
+#include <unistd.h>
+using namespace std;
+int main() {
+  int *a;
+  a = NULL;
+  cout << "a: " << a << " *a: " << *a << endl;
+  return 0;
+}
+\end{lstlisting}
+
+\subsubsection{Add -g compiler flag}
+The $-g$. This create the $dSYM$ directory with symbols annotated. This way $lldb$ can used to debug as it has the all the info. To debug you can do
+\begin{lstlisting}[style=asmstyle]
+
+	lldb null
+	
+\end{lstlisting}
+This will open the debugger. \lstinline[style=bashstyle]|run| can be used to run the code. It will crash at the deferenccing line.
+
+\section{XV6}
+
+\subsection{Operating System Interfaces}
+OS provides services to user programs through interfaces. We want the interfaces to be simple on one hand but also provide generality and there is always tension in this. 
+
+User programs execute as \textbf{processes}. When the process needs to run a privileged instruction, it makes a \textbf{system call}. This moves it into kernel space. The kernel executes the requested service and then returns back into the user space. Some important system calls 
+\begin{enumerate}
+	\item fork
+	\item exec 
+\end{enumerate}
+
+If you look at $/usr/sh.c$ you will find that its really a very simple program. When you open a terminal thats a GUI and the first thing it starts doing is running the shell executable. This executable is just waiting for the user to type in a command. The shell program forks and if the fork is successful will start executing this new process. 
+
+XV6 uses the \textbf{ELF} format to execute instructions. It has a certain format for instructions and data. 
+
+How do you think fork and exec work in conjunction? Think
+
+\subsection{Traps and System Calls (Chapter 4 of XV6 book)}
+
+Three events that cause the CPU to set aside ordinary execution and force transfer to special code that handles the event.
+\begin{enumerate}
+	\item System Calls: \textbf{ecall} instruction
+	\item Exceptions: Some illegal thing was attempted like divide by 0.
+	\item Interrupt
+\end{enumerate}
+
+We use the term \textbf{trap} generically for this handling of events.
+It proceeds in four stages.
+\begin{enumerate}
+	\item Hardware actions taken by the RISC-V CPU.
+	\item Some assembly instructions that prepare way for the Kernel C code.
+	\item A C function that decides what to do with the trap.
+	\item The system call or the device driver service routine.
+\end{enumerate}
+
+
+\section{xv6}
+
+\subsection{Remzi's Video \cite{xv6_remzi}}
+The main idea is how to go from \textbf{user} mode to \textbf{kernel} mode. Every xv6 user program exits with a \textbf{exit()} command. 
+
+We added a hello.c command in $user/$. I compiled it with the command.
+
+\begin{lstlisting}[style=bashstyle]
+	make qemu #OR
+	make fs.img
+\end{lstlisting}
+
+
+This will log into xv6. To exit the key stroke is \textbf{C-a a x}
+
+Note when you compiled three things happened
+\begin{lstlisting}[style=bashstyle]
+	riscv64-unknown-elf-gcc -Wall -Werror -Wno-unknown-attributes -O -fno-omit-frame-pointer -ggdb -gdwarf-2 -march=rv64gc -MD -mcmodel=medany -ffreestanding -fno-common -nostdlib -fno-builtin-strncpy -fno-builtin-strncmp -fno-builtin-strlen -fno-builtin-memset -fno-builtin-memmove -fno-builtin-memcmp -fno-builtin-log -fno-builtin-bzero -fno-builtin-strchr -fno-builtin-exit -fno-builtin-malloc -fno-builtin-putc -fno-builtin-free -fno-builtin-memcpy -Wno-main -fno-builtin-printf -fno-builtin-fprintf -fno-builtin-vprintf -I. -fno-stack-protector -fno-pie -no-pie   -c -o user/hello.o user/hello.c
+	
+	riscv64-unknown-elf-ld -z max-page-size=4096 -T user/user.ld -o user/_hello user/hello.o user/ulib.o user/usys.o user/printf.o user/umalloc.o
+
+	riscv64-unknown-elf-objdump -S user/_hello > user/hello.asm
+
+	riscv64-unknown-elf-objdump -t user/_hello | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$/d' > user/hello.sym
+\end{lstlisting}
+
+The ld portion is called the linker. And its linking your code to other object files like \textbf{printf}.
+
+If you take a look through the \textbf{usys.S} file, its assembly instructions. Heres a chunk:
+\begin{lstlisting}[style=asmstyle]
+	.global uptime // Make it available for the linker to see.
+	uptime: 
+ 	li a7, SYS_uptime // a7 is the register that gets the syscall number
+ 	ecall // Trigger supervisor kernel. When the kernel runs it looks at the a7 register and jumps to this call.
+ 	ret // Return from the kernel to the caller
+\end{lstlisting}
+
+One thing you might wonder, where are the arguments? Like $open$ will have arguments. The $xv6$ convention is to put them on the stack for the kernel to pop off. 
+
+\printbibliography
+
+\end{document}
