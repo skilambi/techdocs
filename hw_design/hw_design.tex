@@ -20,6 +20,108 @@
 
 This document contains notes on various hardware design topics that I find useful to take note of. We will cover hardware design elements, design patterns, static timing analysis, FPGA topics that are useful and other such things. 
 
+\section{Register Types}
+\subsection{Keeper Register}
+
+A Keeper register latches the value in the current cycle and then holds in until a new update arrives and then it keeps that...so on and so forth. Note that it does not break a timing path. 
+
+\begin{lstlisting}[style=svstyle]
+
+module keeper_reg #(
+	parameter type T = logic
+) (
+	input clk,
+	input reset,
+	
+	input logic valid,
+	input T sig_in,
+	output T sig_out
+);
+
+	logic data;
+	T data_reg;
+	
+	assign data = valid ? sig_in : data_reg;
+	
+	always_ff @(posedge clk) begin 
+		data_reg <= data;
+	end 
+	
+	assign sig_out = data;
+
+endmodule
+
+\end{lstlisting}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.4\textwidth]{./figs/keeper_reg.png}
+    \caption{Keeper Reg}
+    \label{fig:mylabel}
+\end{figure}
+
+
+
+\section{Race Conditions}
+This section covers various cases of race conditions and how to handle them.
+ 
+\subsection{When an update needs to be delayed until current transaction is done}
+Sometimes we have a situation where an update comes in from another block or MMIO and the current block has a state-machine thats operating. If the state machine is in IDLE mode, we want to take the update in immediately. Otherwise we want to keep it pending until the current transaction is complete and then apply it. 
+
+Lets say we have a block where
+\begin{enumerate}
+	\item An $update$ pulse is an input that moves a value from a holding register (that has been programmed via MMIO) into the active register. Lets call these $a\_holding\_reg$ and $a\_active\_reg$
+	\item Lets say the block also has a state machine with the following states $IDLE$, $PROCESSING$.
+\end{enumerate}
+
+Here are the constraints
+\begin{enumerate}
+	\item If in $IDLE$ state, then update should reflect immediately.
+	\item If not in $IDLE$ then wait for applying the change. 
+\end{enumerate}
+
+\begin{lstlisting}[style=svstyle]
+
+logic transaction_in_progress;
+
+// We say transaction is in progress when 
+// 1. State is IDLE and a trigger shows up (this is an input probably into the block)
+// 2. OR, we are in PROCESSING state. 
+assign transaction_in_progress = trigger || state != IDLE; 
+
+/*
+In this code we track when update needs to be pending.
+*/
+always_comb begin 
+	if ( trigger & transaction_in_progress ) begin 
+		transaction_pending_next = 1;
+	end else if ( transaction_pending & !transaction_in_progress ) begin
+		transaction_pending_next = 0;
+	end else 
+		transaction_pending_next = transaction_pending;
+end
+
+`REG_RC ( transaction_pending, '0, transaction_pending_next )
+
+// When should we do the update?
+// 1) When we receive a trigger and we are not in the middle of a transaction
+// 2) OR, we received a trigger in the middle of a transaction, we waited and now we are
+//        clear to update.
+assign do_update =  (trigger || transaction_pending) & (! transaction_in_progress);
+
+// need to hold the data when we receive the trigger in the middle of a transaction
+`REG_EC ( pending_reg, trigger & transaction_in_progress, a_holding_register)
+
+// What is the source of the update?
+assign source_data = (trigger & !transaction_in_progress) ? a_holding_reg : 
+                     (transaction_pending & !transaction_in_progress) ? pending_reg :
+                     a_active_reg;
+
+`REG_EC ( a_active_reg, do_update, source_data )
+					
+
+\end{lstlisting}
+
 \section{Common Hardware Blocks}
 \subsection{Inferred Latch}
 

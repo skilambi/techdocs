@@ -1,0 +1,61 @@
+\documentclass[11pt]{article}
+\usepackage{../latex/styles/core} 
+
+\bibliography{bibliography}
+
+\title{Hands On DL - MIT 15.776}
+\author{Sai Mohan Kilambi}
+\date{\today}
+\begin{document}
+
+\maketitle
+
+\setcounter{tocdepth}{4}
+\tableofcontents
+
+\newpage
+\section{Lecture 2 - Training Deep Neural Networks}
+Someone asked the question when should you use DL and or something simpler like Binary Trees. The answer was that there are two dimensions
+\begin{enumerate}
+	\item Is explaining the model more important? Go with simpler models
+	\item Is accuracy more important? Then go with that and dont worry how complex the model is. 
+\end{enumerate}
+
+By default just choose \textbf{RELU} as your non linear function.
+
+Lets design the layout of the network
+\begin{enumerate}
+	\item Choose number of hidden layers and number of neurons in each layer - We choose 1 Hidden layer with 16 RELU neurons
+	\item Pick the right output layer - Sigmoid when you want output between 0 and 1 like a probability.
+\end{enumerate}
+
+If there are no hidden layers its just \textbf{Linear Regression}.
+
+Too many layers can result in overfitting.
+
+If you want to emit a probability in the end then use Sigmoid function. Thats why the output layer is sigmoid. HE was explaining a medical diagnosis problem.
+
+Ok lets assume a network with on hidden layer of 16 nodes. So in this medical diagnosis problem there are 
+\begin{enumerate}
+	\item 29 inputs
+	\item Hidden layer: 16 nodes with weight and bias for each node.
+	\item Output layer with 1 weight and 1 bias.
+\end{enumerate}
+
+So total number of parameters is $29*16 + 16 + 16*1 +1 = 497$. You see how the parameters are just exploding. 
+
+\begin{lstlisting}[style=pythonstyle]
+import keras
+
+#Create the input layer
+input = keras.Input(shape=(16,)) 
+
+# Now create the first hidden layer
+h = keras.layers.Dense(16, activation="relu")(input)
+output = keras.layers.Dense(1, activation="sigmoid")(h)
+
+model = keras.Model(input, output)
+\end{lstlisting}
+
+The role of the data is to give you the coefficients.
+\end{document}
